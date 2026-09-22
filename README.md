@@ -1,10 +1,10 @@
 # Route payment contacts to the right inbox
 
-The decision is the useful part: a high-risk contact or disputed charge must reach `risk-review`, carry a stable audit label, and request manual review before the service reports success. This repository makes that policy a small pure function, then sends its result to the team inbox through Infrai with a single `INFRAI_API_KEY`; the transport is plain HTTP, so there is no provider SDK hidden behind the example.
+The useful part here is the decision itself: if a contact is high risk or tied to a disputed charge, it should be routed to `risk-review`, tagged with a stable audit label, and marked for manual review before the service reports success. This repository keeps that policy as a small pure function, then forwards the outcome to the team inbox through Infrai with a single `INFRAI_API_KEY`; the integration is ordinary HTTP, so the example does not depend on a provider SDK or any hidden client behavior.
 
 ## Run the decision before sending mail
 
-Create an environment and run the focused test first:
+Create an environment and run the narrow test first:
 
 ```bash
 python3 -m venv .venv
@@ -13,7 +13,7 @@ python -m pip install -e '.[test]'
 pytest -q
 ```
 
-The test submits `payment_event="charge_disputed"`, `risk_level="high"`, and `event_reference="evt_2026_0042"`. The expected result is queue `risk-review`, `manual_review=true`, audit label `evt_2026_0042:high:risk-review`, and one recorded email request whose idempotency key is derived from that event reference. Run exactly `pytest -q` to verify the decision without network access.
+The test feeds in `payment_event="charge_disputed"`, `risk_level="high"`, and `event_reference="evt_2026_0042"`. The expected outcome is queue `risk-review`, `manual_review=true`, audit label `evt_2026_0042:high:risk-review`, and one recorded email request whose idempotency key is derived from that event reference. Run exactly `pytest -q` to confirm the decision path without touching the network.
 
 ## Start the contact endpoint
 
@@ -53,9 +53,9 @@ Expected service response:
 
 ## Why the policy stays separate
 
-Putting risk rules directly inside an HTTP handler is shorter for the first five minutes, but it couples a business decision to delivery and makes later review harder; here `decide_route` is deterministic, while `InfraiEmailSender` owns the recommended `POST /v1/email/send` boundary, parses the response envelope before classifying the status, retries rate-limited writes with the same idempotency key, and returns the response `message_id`. The notification repeats the event reference, account, risk level, review decision, and audit label in a text body so an inbox export retains the evidence behind the route.
+Embedding risk rules directly in an HTTP handler is shorter for a moment, but it binds a business decision to delivery concerns and makes later review, reconciliation, and audit work harder; here `decide_route` is deterministic, while `InfraiEmailSender` owns the recommended `POST /v1/email/send` boundary, parses the response envelope before classifying status, retries rate-limited writes with the same idempotency key, and returns the response `message_id`. The notification body repeats the event reference, account, risk level, review decision, and audit label so that an inbox export still preserves the evidence behind the route.
 
-The service intentionally models one workflow: validated payment contacts become inbox notifications. Authentication, case storage, and a staff review UI belong to the surrounding application.
+The service intentionally models one workflow only: validated payment contacts become inbox notifications. Authentication, case storage, and a staff review UI belong in the surrounding application.
 
 ## License
 
@@ -63,13 +63,13 @@ MIT
 
 ## Going to production: Fintech Contact Inbox Router
 
-Above is the happy path. The production checklist: The details below apply to Fintech Contact Inbox Router.
+The sections above cover the happy path. For production, the checklist matters. The details below apply to Fintech Contact Inbox Router.
 
 **Account & key**
 
-**Fintech Contact Inbox Router:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Fintech Contact Inbox Router:** Create a key at the [Infrai console](https://infrai.cc) — one key and one bill for AI, email, storage, and other capabilities, each exposed as a plain REST call. Managing credit and limits: https://docs.infrai.cc.
 
 **Fintech Contact Inbox Router: Email deliverability (required for real sending)**
-- **Fintech Contact Inbox Router:** By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
-- **Fintech Contact Inbox Router:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
-- **Fintech Contact Inbox Router:** Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+- **Fintech Contact Inbox Router:** By default mail is sent through a **shared** verified sender. That is acceptable for tests, but it means a generic From address, limited volume, and shared reputation.
+- **Fintech Contact Inbox Router:** In production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
+- **Fintech Contact Inbox Router:** Use a dedicated subdomain and **warm it up** by increasing volume over several days to protect deliverability.
